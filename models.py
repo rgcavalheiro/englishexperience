@@ -59,6 +59,10 @@ class Aula(db.Model):
     observacoes = db.Column(db.Text)
     status = db.Column(db.Enum(StatusAula), default=StatusAula.AGENDADA)
     data_criacao = db.Column(db.DateTime, default=datetime.utcnow)
+    # Integração Google Calendar
+    google_event_id = db.Column(db.String(255))  # ID do evento no Google Calendar
+    # Grupo de aulas vinculadas (mesmo aluno, mesmos dias, mesmo horário)
+    grupo_aula_id = db.Column(db.String(100))  # ID único para identificar aulas relacionadas
     
     def to_dict(self):
         return {
@@ -70,7 +74,9 @@ class Aula(db.Model):
             'conteudo': self.conteudo,
             'observacoes': self.observacoes,
             'status': self.status.value if self.status else None,
-            'data_criacao': self.data_criacao.isoformat() if self.data_criacao else None
+            'data_criacao': self.data_criacao.isoformat() if self.data_criacao else None,
+            'google_event_id': self.google_event_id,
+            'grupo_aula_id': self.grupo_aula_id
         }
 
 class Contrato(db.Model):
@@ -119,6 +125,19 @@ class ListaEspera(db.Model):
             'data_cadastro': self.data_cadastro.isoformat() if self.data_cadastro else None,
             'status': self.status
         }
+
+class GoogleCalendarToken(db.Model):
+    __tablename__ = 'google_calendar_tokens'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    token = db.Column(db.Text, nullable=False)  # JSON com tokens
+    refresh_token = db.Column(db.Text)
+    token_uri = db.Column(db.String(500))
+    client_id = db.Column(db.String(500))
+    client_secret = db.Column(db.String(500))
+    scopes = db.Column(db.Text)
+    data_criacao = db.Column(db.DateTime, default=datetime.utcnow)
+    data_atualizacao = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class Relatorio(db.Model):
     __tablename__ = 'relatorios'

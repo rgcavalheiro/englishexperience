@@ -2,7 +2,18 @@
 export default async function dashboard(container) {
     container.innerHTML = `
         <div class="container-fluid">
-            <h2 class="mb-4">Dashboard</h2>
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2>Dashboard</h2>
+                <div class="btn-group">
+                    <button class="btn btn-outline-primary" id="btn-export-backup">
+                        <i class="bi bi-download"></i> Exportar Backup
+                    </button>
+                    <button class="btn btn-outline-secondary" id="btn-import-backup">
+                        <i class="bi bi-upload"></i> Importar Backup
+                    </button>
+                    <input type="file" id="file-import" accept=".json" style="display: none;">
+                </div>
+            </div>
             
             <div class="row g-4">
                 <div class="col-md-3">
@@ -123,6 +134,43 @@ export default async function dashboard(container) {
 
     } catch (error) {
         container.innerHTML = `<div class="alert alert-danger">Erro ao carregar dados: ${error.message}</div>`;
+    }
+
+    // Event listeners para backup
+    const btnExport = document.getElementById('btn-export-backup');
+    const btnImport = document.getElementById('btn-import-backup');
+    const fileInput = document.getElementById('file-import');
+
+    if (btnExport) {
+        btnExport.addEventListener('click', async () => {
+            try {
+                await window.backupManager.exportData();
+                alert('Backup exportado com sucesso!');
+            } catch (error) {
+                alert('Erro ao exportar backup: ' + error.message);
+            }
+        });
+    }
+
+    if (btnImport) {
+        btnImport.addEventListener('click', () => {
+            if (fileInput) fileInput.click();
+        });
+    }
+
+    if (fileInput) {
+        fileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                try {
+                    await window.backupManager.importData(file);
+                    alert('Dados importados com sucesso! Recarregando página...');
+                    window.location.reload();
+                } catch (error) {
+                    alert('Erro ao importar dados: ' + error.message);
+                }
+            }
+        });
     }
 }
 

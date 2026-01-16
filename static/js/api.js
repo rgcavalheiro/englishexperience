@@ -1,8 +1,39 @@
-// Cliente API para comunicação com o backend
+// Cliente API para comunicação com o backend ou storage local
 const API_BASE_URL = '/api';
+let useLocalStorage = false;
+
+// Verificar se está rodando no GitHub Pages (sem backend)
+async function checkBackendAvailable() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/health`, { method: 'GET' });
+        return response.ok;
+    } catch (error) {
+        return false;
+    }
+}
+
+// Inicializar verificação
+checkBackendAvailable().then(available => {
+    useLocalStorage = !available;
+    if (useLocalStorage) {
+        console.log('Usando armazenamento local (IndexedDB)');
+        // Garantir que localStorage está inicializado
+        if (window.localStorage && !window.localStorage.db) {
+            window.localStorage.init();
+        }
+    } else {
+        console.log('Usando backend Flask');
+    }
+});
 
 class ApiClient {
     async request(endpoint, options = {}) {
+        // Se usar localStorage, redirecionar para métodos locais
+        if (useLocalStorage) {
+            return this.localRequest(endpoint, options);
+        }
+
+        // Caso contrário, usar backend
         const url = `${API_BASE_URL}${endpoint}`;
         const config = {
             headers: {
@@ -29,9 +60,113 @@ class ApiClient {
             
             return data;
         } catch (error) {
+            // Se falhar, tentar usar localStorage como fallback
+            if (!useLocalStorage) {
+                console.warn('Backend não disponível, usando localStorage');
+                useLocalStorage = true;
+                if (window.localStorage && !window.localStorage.db) {
+                    await window.localStorage.init();
+                }
+                return this.localRequest(endpoint, options);
+            }
             console.error('Erro na requisição:', error);
             throw error;
         }
+    }
+
+    async localRequest(endpoint, options = {}) {
+        if (!window.localStorage || !window.localStorage.db) {
+            await window.localStorage.init();
+        }
+
+        const method = options.method || 'GET';
+        const body = options.body;
+
+        // Mapear endpoints para métodos do localStorage
+        if (endpoint === '/alunos') {
+            if (method === 'GET') return window.localStorage.getAlunos();
+            if (method === 'POST') return window.localStorage.createAluno(body);
+        }
+        if (endpoint.startsWith('/alunos/')) {
+            const id = parseInt(endpoint.split('/')[2]);
+            if (method === 'GET') return window.localStorage.getAluno(id);
+            if (method === 'PUT') return window.localStorage.updateAluno(id, body);
+            if (method === 'DELETE') return window.localStorage.deleteAluno(id);
+        }
+        if (endpoint === '/aulas') {
+            if (method === 'GET') {
+                const params = new URLSearchParams(window.location.search);
+                const alunoId = params.get('aluno_id');
+                return window.localStorage.getAulas(alunoId ? parseInt(alunoId) : null);
+            }
+            if (method === 'POST') return window.localStorage.createAula(body);
+        }
+        if (endpoint.startsWith('/aulas/')) {
+            const id = parseInt(endpoint.split('/')[2]);
+            if (method === 'GET') return window.localStorage.getAula(id);
+            if (method === 'PUT') return window.localStorage.updateAula(id, body);
+            if (method === 'DELETE') return window.localStorage.deleteAula(id);
+        }
+        if (endpoint === '/contratos') {
+            if (method === 'GET') {
+                const params = new URLSearchParams(window.location.search);
+                const alunoId = params.get('aluno_id');
+                return window.localStorage.getContratos(alunoId ? parseInt(alunoId) : null);
+            }
+            if (method === 'POST') return window.localStorage.uploadContrato(body);
+        }
+        if (endpoint.startsWith('/contratos/') && endpoint.endsWith('/download')) {
+            const id = parseInt(endpoint.split('/')[2]);
+            const contrato = await window.localStorage.getContrato(id);
+            if (contrato && contrato.caminho_arquivo) {
+                // Para GitHub Pages, retornar dados do arquivo
+                return contrato;
+            }
+            throw new Error('Contrato não encontrado');
+        }
+        if (endpoint.startsWith('/contratos/')) {
+            const id = parseInt(endpoint.split('/')[2]);
+            if (method === 'GET') return window.localStorage.getContrato(id);
+            if (method === 'DELETE') return window.localStorage.deleteContrato(id);
+        }
+        if (endpoint === '/lista-espera') {
+            if (method === 'GET') return window.localStorage.getListaEspera();
+            if (method === 'POST') return window.localStorage.addListaEspera(body);
+        }
+        if (endpoint.startsWith('/lista-espera/')) {
+            const parts = endpoint.split('/');
+            const id = parseInt(parts[2]);
+            if (parts[3] === 'ativar') {
+                // Ativar lista de espera = criar aluno
+                const item = await window.localStorage.get('listaEspera', id);
+                const aluno = await window.localStorage.createAluno({
+                    nome: item.nome,
+                    email: item.email,
+                    telefone: item.telefone,
+                    observacoes: item.observacoes
+                });
+                await window.localStorage.deleteListaEspera(id);
+                return aluno;
+            }
+            if (method === 'GET') return window.localStorage.get('listaEspera', id);
+            if (method === 'PUT') return window.localStorage.updateListaEspera(id, body);
+            if (method === 'DELETE') return window.localStorage.deleteListaEspera(id);
+        }
+        if (endpoint === '/relatorios') {
+            if (method === 'GET') {
+                const params = new URLSearchParams(window.location.search);
+                const alunoId = params.get('aluno_id');
+                return window.localStorage.getRelatorios(alunoId ? parseInt(alunoId) : null);
+            }
+        }
+        if (endpoint === '/relatorios/gerar') {
+            if (method === 'POST') return window.localStorage.gerarRelatorio(body);
+        }
+        if (endpoint === '/google/status') {
+            return { connected: false, message: 'Google Calendar não disponível em modo offline' };
+        }
+
+        throw new Error(`Endpoint não suportado: ${endpoint}`);
     }
 
     // Alunos
@@ -150,6 +285,19 @@ class ApiClient {
     // Aniversários
     async downloadPlanilhaAniversarios() {
         window.open(`${API_BASE_URL}/aniversarios/planilha`, '_blank');
+    }
+
+    // Google Calendar
+    async googleAuthorize() {
+        return this.request('/google/authorize');
+    }
+
+    async googleStatus() {
+        return this.request('/google/status');
+    }
+
+    async googleDisconnect() {
+        return this.request('/google/disconnect', { method: 'POST' });
     }
 }
 

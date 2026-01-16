@@ -1,16 +1,26 @@
-from flask import Flask, request, jsonify, send_file, send_from_directory
+from flask import Flask, request, jsonify, send_file, send_from_directory, redirect, session
 from flask_cors import CORS
 from config import Config
 from database import db
-from models import Aluno, Aula, Contrato, ListaEspera, Relatorio, StatusAluno, StatusAula
+from models import Aluno, Aula, Contrato, ListaEspera, Relatorio, GoogleCalendarToken, StatusAluno, StatusAula
 from datetime import datetime, date
 import os
 import json
 from werkzeug.utils import secure_filename
 from io import BytesIO
+# Importações opcionais do Google Calendar
+try:
+    from google_calendar import get_google_credentials, create_google_calendar_event, update_google_calendar_event, delete_google_calendar_event
+    from google_auth_oauthlib.flow import Flow
+    from google.auth.transport.requests import Request
+    GOOGLE_CALENDAR_AVAILABLE = True
+except ImportError:
+    GOOGLE_CALENDAR_AVAILABLE = False
+    print("Aviso: Google Calendar não disponível. Instale as dependências com: pip install -r requirements.txt")
 
 app = Flask(__name__)
 app.config.from_object(Config)
+app.secret_key = app.config['SECRET_KEY']
 CORS(app)
 db.init_app(app)
 
@@ -224,18 +234,156 @@ def obter_aula(id):
 @app.route('/api/aulas', methods=['POST'])
 def criar_aula():
     try:
+        from datetime import timedelta
         data = request.get_json()
-        aula = Aula(
-            aluno_id=data.get('aluno_id'),
-            data_aula=datetime.fromisoformat(data['data_aula']),
-            duracao=data.get('duracao', 60),
-            conteudo=data.get('conteudo'),
-            observacoes=data.get('observacoes'),
-            status=StatusAula[data.get('status', 'AGENDADA').upper()]
-        )
-        db.session.add(aula)
+        
+        # Verificar se deve repetir semanalmente
+        repetir_semanal = data.get('repetir_semanal', False)
+        num_semanas = data.get('num_semanas', 1) if repetir_semanal else 1
+        frequencia_semanal = data.get('frequencia_semanal', 1) if repetir_semanal else 1
+        dias_semana = data.get('dias_semana', [])  # Lista de dias da semana (0=segunda, 6=domingo)
+        
+        aulas_criadas = []
+        data_inicio = datetime.fromisoformat(data['data_aula'])
+        
+        # Gerar grupo_aula_id se for repetir (para vincular aulas relacionadas)
+        import hashlib
+        grupo_aula_id = None
+        if repetir_semanal:
+            # Criar hash único baseado em aluno_id + dias da semana + horário
+            hora_inicio = data_inicio.time()
+            dias_semana_str = ','.join(map(str, sorted(dias_semana))) if dias_semana else str(data_inicio.weekday())
+            grupo_str = f"{data.get('aluno_id')}_{dias_semana_str}_{hora_inicio}"
+            grupo_aula_id = hashlib.md5(grupo_str.encode()).hexdigest()[:16]
+        
+        # Se não repetir, criar apenas uma aula
+        if not repetir_semanal:
+            aula = Aula(
+                aluno_id=data.get('aluno_id'),
+                data_aula=data_inicio,
+                duracao=data.get('duracao', 60),
+                conteudo=data.get('conteudo'),
+                observacoes=data.get('observacoes'),
+                status=StatusAula[data.get('status', 'AGENDADA').upper()],
+                grupo_aula_id=grupo_aula_id
+            )
+            db.session.add(aula)
+            db.session.flush()
+            
+            # Sincronizar com Google Calendar
+            if GOOGLE_CALENDAR_AVAILABLE:
+                token_record = GoogleCalendarToken.query.first()
+                if token_record and data.get('sincronizar_google', True):
+                    creds = get_google_credentials(app.config, token_record)
+                    if creds:
+                        aluno = Aluno.query.get(aula.aluno_id)
+                        if aluno:
+                            event_id = create_google_calendar_event(creds, aula, aluno.nome)
+                            if event_id:
+                                aula.google_event_id = event_id
+            
+            aulas_criadas.append(aula.to_dict())
+        else:
+            # Se repetir semanalmente
+            if frequencia_semanal == 1:
+                # 1x por semana: usar o dia da data inicial
+                dia_semana_inicio = data_inicio.weekday()  # 0=segunda, 6=domingo
+                
+                for semana in range(num_semanas):
+                    data_aula = data_inicio + timedelta(weeks=semana)
+                    
+                    aula = Aula(
+                        aluno_id=data.get('aluno_id'),
+                        data_aula=data_aula,
+                        duracao=data.get('duracao', 60),
+                        conteudo=data.get('conteudo'),
+                        observacoes=data.get('observacoes'),
+                        status=StatusAula[data.get('status', 'AGENDADA').upper()]
+                    )
+                    db.session.add(aula)
+                    db.session.flush()
+                    
+                    # Sincronizar com Google Calendar
+                    if GOOGLE_CALENDAR_AVAILABLE:
+                        token_record = GoogleCalendarToken.query.first()
+                        if token_record and data.get('sincronizar_google', True):
+                            creds = get_google_credentials(app.config, token_record)
+                            if creds:
+                                aluno = Aluno.query.get(aula.aluno_id)
+                                if aluno:
+                                    event_id = create_google_calendar_event(creds, aula, aluno.nome)
+                                    if event_id:
+                                        aula.google_event_id = event_id
+                    
+                    aulas_criadas.append(aula.to_dict())
+            else:
+                # Múltiplas vezes por semana: usar os dias selecionados
+                if not dias_semana or len(dias_semana) != frequencia_semanal:
+                    return jsonify({'error': f'Selecione exatamente {frequencia_semanal} dia(s) da semana'}), 400
+                
+                # Obter hora da data inicial
+                hora_inicio = data_inicio.time()
+                dia_semana_inicio = data_inicio.weekday()  # 0=segunda, 6=domingo
+                
+                for semana in range(num_semanas):
+                    for dia_semana in sorted(dias_semana):  # Ordenar dias para manter ordem
+                        if semana == 0:
+                            # Primeira semana: calcular diferença do dia inicial
+                            dias_diferenca = (dia_semana - dia_semana_inicio) % 7
+                            if dias_diferenca == 0:
+                                # Mesmo dia da data inicial
+                                data_aula = data_inicio
+                            else:
+                                # Outro dia da primeira semana
+                                data_aula = data_inicio + timedelta(days=dias_diferenca)
+                        else:
+                            # Semanas seguintes: calcular a partir da data inicial
+                            # Semanas completas + diferença do dia
+                            dias_diferenca = (dia_semana - dia_semana_inicio) % 7
+                            data_aula = data_inicio + timedelta(weeks=semana, days=dias_diferenca)
+                        
+                        # Garantir que a hora seja mantida
+                        if isinstance(data_aula, datetime):
+                            if data_aula.time() != hora_inicio:
+                                data_aula = datetime.combine(data_aula.date(), hora_inicio)
+                        
+                        aula = Aula(
+                            aluno_id=data.get('aluno_id'),
+                            data_aula=data_aula,
+                            duracao=data.get('duracao', 60),
+                            conteudo=data.get('conteudo'),
+                            observacoes=data.get('observacoes'),
+                            status=StatusAula[data.get('status', 'AGENDADA').upper()],
+                            grupo_aula_id=grupo_aula_id
+                        )
+                        db.session.add(aula)
+                        db.session.flush()
+                        
+                        # Sincronizar com Google Calendar
+                        if GOOGLE_CALENDAR_AVAILABLE:
+                            token_record = GoogleCalendarToken.query.first()
+                            if token_record and data.get('sincronizar_google', True):
+                                creds = get_google_credentials(app.config, token_record)
+                                if creds:
+                                    aluno = Aluno.query.get(aula.aluno_id)
+                                    if aluno:
+                                        event_id = create_google_calendar_event(creds, aula, aluno.nome)
+                                        if event_id:
+                                            aula.google_event_id = event_id
+                        
+                        aulas_criadas.append(aula.to_dict())
+        
         db.session.commit()
-        return jsonify(aula.to_dict()), 201
+        
+        # Retornar a última aula criada (ou todas se múltiplas)
+        if len(aulas_criadas) == 1:
+            return jsonify(aulas_criadas[0]), 201
+        else:
+            return jsonify({
+                'message': f'{len(aulas_criadas)} aulas criadas com sucesso',
+                'aulas': aulas_criadas,
+                'total': len(aulas_criadas)
+            }), 201
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 400
@@ -246,18 +394,52 @@ def atualizar_aula(id):
         aula = Aula.query.get_or_404(id)
         data = request.get_json()
         
-        if data.get('aluno_id'):
-            aula.aluno_id = data['aluno_id']
-        if data.get('data_aula'):
-            aula.data_aula = datetime.fromisoformat(data['data_aula'])
-        if data.get('duracao'):
-            aula.duracao = data['duracao']
-        aula.conteudo = data.get('conteudo', aula.conteudo)
-        aula.observacoes = data.get('observacoes', aula.observacoes)
-        if data.get('status'):
-            aula.status = StatusAula[data['status'].upper()]
+        # Verificar se deve atualizar todas as aulas do grupo
+        atualizar_grupo = data.get('atualizar_grupo', False)
+        aulas_para_atualizar = [aula]
+        
+        if atualizar_grupo and aula.grupo_aula_id:
+            # Buscar todas as aulas do mesmo grupo
+            aulas_grupo = Aula.query.filter_by(
+                grupo_aula_id=aula.grupo_aula_id,
+                aluno_id=aula.aluno_id
+            ).all()
+            aulas_para_atualizar = aulas_grupo
+        
+        # Atualizar todas as aulas do grupo
+        for aula_atualizar in aulas_para_atualizar:
+            if data.get('aluno_id'):
+                aula_atualizar.aluno_id = data['aluno_id']
+            if data.get('data_aula'):
+                aula_atualizar.data_aula = datetime.fromisoformat(data['data_aula'])
+            if data.get('duracao'):
+                aula_atualizar.duracao = data['duracao']
+            if data.get('conteudo') is not None:
+                aula_atualizar.conteudo = data['conteudo']
+            if data.get('observacoes') is not None:
+                aula_atualizar.observacoes = data['observacoes']
+            if data.get('status'):
+                aula_atualizar.status = StatusAula[data['status'].upper()]
+            
+            # Sincronizar com Google Calendar se estiver conectado
+            if GOOGLE_CALENDAR_AVAILABLE:
+                token_record = GoogleCalendarToken.query.first()
+                if token_record and aula_atualizar.google_event_id and data.get('sincronizar_google', True):
+                    creds = get_google_credentials(app.config, token_record)
+                    if creds:
+                        aluno = Aluno.query.get(aula_atualizar.aluno_id)
+                        if aluno:
+                            update_google_calendar_event(creds, aula_atualizar.google_event_id, aula_atualizar, aluno.nome)
         
         db.session.commit()
+        
+        if len(aulas_para_atualizar) > 1:
+            return jsonify({
+                'message': f'{len(aulas_para_atualizar)} aulas atualizadas com sucesso',
+                'aula': aula.to_dict(),
+                'total_atualizadas': len(aulas_para_atualizar)
+            }), 200
+        
         return jsonify(aula.to_dict()), 200
     except Exception as e:
         db.session.rollback()
@@ -267,6 +449,15 @@ def atualizar_aula(id):
 def deletar_aula(id):
     try:
         aula = Aula.query.get_or_404(id)
+        
+        # Deletar evento do Google Calendar se existir
+        if GOOGLE_CALENDAR_AVAILABLE and aula.google_event_id:
+            token_record = GoogleCalendarToken.query.first()
+            if token_record:
+                creds = get_google_credentials(app.config, token_record)
+                if creds:
+                    delete_google_calendar_event(creds, aula.google_event_id)
+        
         db.session.delete(aula)
         db.session.commit()
         return jsonify({'message': 'Aula deletada com sucesso'}), 200
@@ -641,6 +832,148 @@ def gerar_planilha_aniversarios():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# ========== ROTAS DO GOOGLE CALENDAR ==========
+@app.route('/api/google/authorize', methods=['GET'])
+def google_authorize():
+    """Inicia o fluxo de autenticação OAuth do Google"""
+    try:
+        if not GOOGLE_CALENDAR_AVAILABLE:
+            return jsonify({'error': 'Google Calendar não disponível. Instale as dependências: pip install -r requirements.txt'}), 400
+        if not app.config['GOOGLE_CLIENT_ID'] or not app.config['GOOGLE_CLIENT_SECRET']:
+            return jsonify({'error': 'Google Calendar não configurado. Configure GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET'}), 400
+        
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": app.config['GOOGLE_CLIENT_ID'],
+                    "client_secret": app.config['GOOGLE_CLIENT_SECRET'],
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [app.config['GOOGLE_REDIRECT_URI']]
+                }
+            },
+            scopes=app.config['GOOGLE_SCOPES'],
+            redirect_uri=app.config['GOOGLE_REDIRECT_URI']
+        )
+        
+        authorization_url, state = flow.authorization_url(
+            access_type='offline',
+            include_granted_scopes='true',
+            prompt='consent'
+        )
+        
+        session['state'] = state
+        return jsonify({'authorization_url': authorization_url}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/google/oauth2callback', methods=['GET'])
+def google_oauth2callback():
+    """Callback do OAuth do Google"""
+    try:
+        if not GOOGLE_CALENDAR_AVAILABLE:
+            return jsonify({'error': 'Google Calendar não disponível'}), 400
+        state = session.get('state')
+        code = request.args.get('code')
+        
+        if not code:
+            return jsonify({'error': 'Código de autorização não recebido'}), 400
+        
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": app.config['GOOGLE_CLIENT_ID'],
+                    "client_secret": app.config['GOOGLE_CLIENT_SECRET'],
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [app.config['GOOGLE_REDIRECT_URI']]
+                }
+            },
+            scopes=app.config['GOOGLE_SCOPES'],
+            redirect_uri=app.config['GOOGLE_REDIRECT_URI'],
+            state=state
+        )
+        
+        flow.fetch_token(code=code)
+        credentials = flow.credentials
+        
+        # Salvar ou atualizar token
+        token_record = GoogleCalendarToken.query.first()
+        if token_record:
+            token_record.token = json.dumps({
+                'token': credentials.token,
+                'refresh_token': credentials.refresh_token,
+                'token_uri': credentials.token_uri,
+                'client_id': credentials.client_id,
+                'client_secret': credentials.client_secret,
+                'scopes': credentials.scopes
+            })
+            token_record.refresh_token = credentials.refresh_token
+            token_record.token_uri = credentials.token_uri
+            token_record.client_id = credentials.client_id
+            token_record.client_secret = credentials.client_secret
+            token_record.scopes = ','.join(credentials.scopes) if credentials.scopes else None
+        else:
+            token_record = GoogleCalendarToken(
+                token=json.dumps({
+                    'token': credentials.token,
+                    'refresh_token': credentials.refresh_token,
+                    'token_uri': credentials.token_uri,
+                    'client_id': credentials.client_id,
+                    'client_secret': credentials.client_secret,
+                    'scopes': credentials.scopes
+                }),
+                refresh_token=credentials.refresh_token,
+                token_uri=credentials.token_uri,
+                client_id=credentials.client_id,
+                client_secret=credentials.client_secret,
+                scopes=','.join(credentials.scopes) if credentials.scopes else None
+            )
+            db.session.add(token_record)
+        
+        db.session.commit()
+        
+        # Redirecionar para a página de sucesso
+        return redirect('http://localhost:8000/#/aulas?google_connected=true')
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/google/status', methods=['GET'])
+def google_status():
+    """Verifica se o Google Calendar está conectado"""
+    try:
+        if not GOOGLE_CALENDAR_AVAILABLE:
+            return jsonify({'connected': False, 'message': 'Google Calendar não disponível'}), 200
+        token_record = GoogleCalendarToken.query.first()
+        if token_record:
+            creds = get_google_credentials(app.config, token_record)
+            if creds and creds.valid:
+                return jsonify({'connected': True, 'message': 'Google Calendar conectado'}), 200
+        return jsonify({'connected': False, 'message': 'Google Calendar não conectado'}), 200
+    except Exception as e:
+        return jsonify({'connected': False, 'error': str(e)}), 200
+
+@app.route('/api/google/disconnect', methods=['POST'])
+def google_disconnect():
+    """Desconecta o Google Calendar"""
+    try:
+        if not GOOGLE_CALENDAR_AVAILABLE:
+            return jsonify({'error': 'Google Calendar não disponível'}), 400
+        token_record = GoogleCalendarToken.query.first()
+        if token_record:
+            db.session.delete(token_record)
+            db.session.commit()
+        return jsonify({'message': 'Google Calendar desconectado'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+# Rota de health check para verificar se backend está disponível
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    return jsonify({'status': 'ok', 'backend': True}), 200
 
 # Rota para servir arquivos estáticos
 @app.route('/static/<path:filename>')
