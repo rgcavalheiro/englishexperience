@@ -110,42 +110,42 @@ class ApiClient {
         const method = options.method || 'GET';
         const body = options.body;
 
-        // Mapear endpoints para métodos do localStorage
+        // Mapear endpoints para métodos do dbStorage
         if (endpoint === '/alunos') {
-            if (method === 'GET') return window.localStorage.getAlunos();
-            if (method === 'POST') return window.localStorage.createAluno(body);
+            if (method === 'GET') return dbStorage.getAlunos();
+            if (method === 'POST') return dbStorage.createAluno(body);
         }
         if (endpoint.startsWith('/alunos/')) {
             const id = parseInt(endpoint.split('/')[2]);
-            if (method === 'GET') return window.localStorage.getAluno(id);
-            if (method === 'PUT') return window.localStorage.updateAluno(id, body);
-            if (method === 'DELETE') return window.localStorage.deleteAluno(id);
+            if (method === 'GET') return dbStorage.getAluno(id);
+            if (method === 'PUT') return dbStorage.updateAluno(id, body);
+            if (method === 'DELETE') return dbStorage.deleteAluno(id);
         }
         if (endpoint === '/aulas') {
             if (method === 'GET') {
                 const params = new URLSearchParams(window.location.search);
                 const alunoId = params.get('aluno_id');
-                return window.localStorage.getAulas(alunoId ? parseInt(alunoId) : null);
+                return dbStorage.getAulas(alunoId ? parseInt(alunoId) : null);
             }
-            if (method === 'POST') return window.localStorage.createAula(body);
+            if (method === 'POST') return dbStorage.createAula(body);
         }
         if (endpoint.startsWith('/aulas/')) {
             const id = parseInt(endpoint.split('/')[2]);
-            if (method === 'GET') return window.localStorage.getAula(id);
-            if (method === 'PUT') return window.localStorage.updateAula(id, body);
-            if (method === 'DELETE') return window.localStorage.deleteAula(id);
+            if (method === 'GET') return dbStorage.getAula(id);
+            if (method === 'PUT') return dbStorage.updateAula(id, body);
+            if (method === 'DELETE') return dbStorage.deleteAula(id);
         }
         if (endpoint === '/contratos') {
             if (method === 'GET') {
                 const params = new URLSearchParams(window.location.search);
                 const alunoId = params.get('aluno_id');
-                return window.localStorage.getContratos(alunoId ? parseInt(alunoId) : null);
+                return dbStorage.getContratos(alunoId ? parseInt(alunoId) : null);
             }
-            if (method === 'POST') return window.localStorage.uploadContrato(body);
+            if (method === 'POST') return dbStorage.uploadContrato(body);
         }
         if (endpoint.startsWith('/contratos/') && endpoint.endsWith('/download')) {
             const id = parseInt(endpoint.split('/')[2]);
-            const contrato = await window.localStorage.getContrato(id);
+            const contrato = await dbStorage.getContrato(id);
             if (contrato && contrato.caminho_arquivo) {
                 // Para GitHub Pages, retornar dados do arquivo
                 return contrato;
@@ -154,41 +154,41 @@ class ApiClient {
         }
         if (endpoint.startsWith('/contratos/')) {
             const id = parseInt(endpoint.split('/')[2]);
-            if (method === 'GET') return window.localStorage.getContrato(id);
-            if (method === 'DELETE') return window.localStorage.deleteContrato(id);
+            if (method === 'GET') return dbStorage.getContrato(id);
+            if (method === 'DELETE') return dbStorage.deleteContrato(id);
         }
         if (endpoint === '/lista-espera') {
-            if (method === 'GET') return window.localStorage.getListaEspera();
-            if (method === 'POST') return window.localStorage.addListaEspera(body);
+            if (method === 'GET') return dbStorage.getListaEspera();
+            if (method === 'POST') return dbStorage.addListaEspera(body);
         }
         if (endpoint.startsWith('/lista-espera/')) {
             const parts = endpoint.split('/');
             const id = parseInt(parts[2]);
             if (parts[3] === 'ativar') {
                 // Ativar lista de espera = criar aluno
-                const item = await window.localStorage.get('listaEspera', id);
-                const aluno = await window.localStorage.createAluno({
+                const item = await dbStorage.get('listaEspera', id);
+                const aluno = await dbStorage.createAluno({
                     nome: item.nome,
                     email: item.email,
                     telefone: item.telefone,
                     observacoes: item.observacoes
                 });
-                await window.localStorage.deleteListaEspera(id);
+                await dbStorage.deleteListaEspera(id);
                 return aluno;
             }
-            if (method === 'GET') return window.localStorage.get('listaEspera', id);
-            if (method === 'PUT') return window.localStorage.updateListaEspera(id, body);
-            if (method === 'DELETE') return window.localStorage.deleteListaEspera(id);
+            if (method === 'GET') return dbStorage.get('listaEspera', id);
+            if (method === 'PUT') return dbStorage.updateListaEspera(id, body);
+            if (method === 'DELETE') return dbStorage.deleteListaEspera(id);
         }
         if (endpoint === '/relatorios') {
             if (method === 'GET') {
                 const params = new URLSearchParams(window.location.search);
                 const alunoId = params.get('aluno_id');
-                return window.localStorage.getRelatorios(alunoId ? parseInt(alunoId) : null);
+                return dbStorage.getRelatorios(alunoId ? parseInt(alunoId) : null);
             }
         }
         if (endpoint === '/relatorios/gerar') {
-            if (method === 'POST') return window.localStorage.gerarRelatorio(body);
+            if (method === 'POST') return dbStorage.gerarRelatorio(body);
         }
         if (endpoint === '/google/status') {
             return { connected: false, message: 'Google Calendar não disponível em modo offline' };
