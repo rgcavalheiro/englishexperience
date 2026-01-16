@@ -67,8 +67,14 @@ class Router {
 
         // Importar e executar view dinamicamente
         // Usar caminho absoluto a partir da raiz do site
-        const basePath = window.location.pathname.split('/').slice(0, -1).join('/') || '';
+        // No GitHub Pages: /englishexperience/static/js/views/
+        // Localmente: /static/js/views/
+        const pathParts = window.location.pathname.split('/').filter(p => p);
+        const basePath = pathParts.length > 0 && pathParts[0] !== 'index.html' 
+            ? '/' + pathParts[0] 
+            : '';
         const viewPath = `${basePath}/static/js/views/${viewName}.js`;
+        console.log('Carregando view:', viewPath);
         import(viewPath)
             .then(module => {
                 if (module.default && typeof module.default === 'function') {
