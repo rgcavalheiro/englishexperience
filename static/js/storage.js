@@ -302,7 +302,14 @@ class LocalStorage {
 const localStorage = new LocalStorage();
 
 // Inicializar quando o módulo for carregado
-localStorage.init().catch(console.error);
+(async () => {
+    try {
+        await localStorage.init();
+        console.log('IndexedDB inicializado com sucesso');
+    } catch (error) {
+        console.error('Erro ao inicializar IndexedDB:', error);
+    }
+})();
 
 // Exportar
 window.localStorage = localStorage;

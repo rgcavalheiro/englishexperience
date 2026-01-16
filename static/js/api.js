@@ -97,7 +97,11 @@ class ApiClient {
     }
 
     async localRequest(endpoint, options = {}) {
-        if (!window.localStorage || !window.localStorage.db) {
+        // Garantir que localStorage está inicializado
+        if (!window.localStorage) {
+            throw new Error('LocalStorage não está disponível');
+        }
+        if (!window.localStorage.db) {
             await window.localStorage.init();
         }
 
