@@ -67,8 +67,9 @@ class Router {
 
         // Importar e executar view dinamicamente
         // Usar import.meta.url para resolver caminho corretamente
+        // router.js está em static/js/, então views/ está no mesmo diretório
         const currentUrl = new URL(import.meta.url);
-        const baseUrl = new URL('../views/' + viewName + '.js', currentUrl);
+        const baseUrl = new URL('./views/' + viewName + '.js', currentUrl);
         const viewPath = baseUrl.pathname;
         console.log('Carregando view:', viewPath);
         import(viewPath)
