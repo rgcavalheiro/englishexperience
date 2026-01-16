@@ -66,14 +66,10 @@ class Router {
         container.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Carregando...</span></div></div>';
 
         // Importar e executar view dinamicamente
-        // Usar caminho absoluto a partir da raiz do site
-        // No GitHub Pages: /englishexperience/static/js/views/
-        // Localmente: /static/js/views/
-        const pathParts = window.location.pathname.split('/').filter(p => p);
-        const basePath = pathParts.length > 0 && pathParts[0] !== 'index.html' 
-            ? '/' + pathParts[0] 
-            : '';
-        const viewPath = `${basePath}/static/js/views/${viewName}.js`;
+        // Usar import.meta.url para resolver caminho corretamente
+        const currentUrl = new URL(import.meta.url);
+        const baseUrl = new URL('../views/' + viewName + '.js', currentUrl);
+        const viewPath = baseUrl.pathname;
         console.log('Carregando view:', viewPath);
         import(viewPath)
             .then(module => {
