@@ -82,12 +82,13 @@ class ApiClient {
             
             return data;
         } catch (error) {
-            // Se falhar, tentar usar localStorage como fallback
+            // Se falhar, tentar usar dbStorage como fallback
             if (!useLocalStorage) {
-                console.warn('Backend não disponível, usando localStorage');
+                console.warn('Backend não disponível, usando dbStorage');
                 useLocalStorage = true;
-                if (window.localStorage && !window.localStorage.db) {
-                    await window.localStorage.init();
+                const dbStorage = window.dbStorage || window.localStorage;
+                if (dbStorage && !dbStorage.db) {
+                    await dbStorage.init();
                 }
                 return this.localRequest(endpoint, options);
             }
