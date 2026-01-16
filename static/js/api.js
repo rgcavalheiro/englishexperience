@@ -146,6 +146,11 @@ class ApiClient {
     async importarAlunos() {
         return this.request('/importar-alunos', { method: 'POST' });
     }
+
+    // Aniversários
+    async downloadPlanilhaAniversarios() {
+        window.open(`${API_BASE_URL}/aniversarios/planilha`, '_blank');
+    }
 }
 
 const api = new ApiClient();

@@ -5,6 +5,9 @@ export default async function alunos(container) {
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h2>Gestão de Alunos</h2>
                 <div>
+                    <button class="btn btn-info me-2" data-action="planilha-aniversarios">
+                        <i class="bi bi-calendar-heart"></i> Planilha de Aniversários
+                    </button>
                     <button class="btn btn-success me-2" data-action="importar-planilha">
                         <i class="bi bi-file-earmark-excel"></i> Importar da Planilha
                     </button>
@@ -154,7 +157,13 @@ export default async function alunos(container) {
         const action = e.target.getAttribute('data-action');
         const id = e.target.getAttribute('data-id');
 
-        if (action === 'importar-planilha') {
+        if (action === 'planilha-aniversarios') {
+            try {
+                api.downloadPlanilhaAniversarios();
+            } catch (error) {
+                alert('Erro ao gerar planilha de aniversários: ' + error.message);
+            }
+        } else if (action === 'importar-planilha') {
             if (confirm('Deseja importar alunos da planilha Excel?\n\nIsso irá adicionar os alunos que ainda não existem no sistema.')) {
                 try {
                     const loadingMsg = document.createElement('div');

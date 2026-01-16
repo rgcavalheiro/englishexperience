@@ -3,10 +3,11 @@ from flask_cors import CORS
 from config import Config
 from database import db
 from models import Aluno, Aula, Contrato, ListaEspera, Relatorio, StatusAluno, StatusAula
-from datetime import datetime
+from datetime import datetime, date
 import os
 import json
 from werkzeug.utils import secure_filename
+from io import BytesIO
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -529,6 +530,117 @@ def obter_relatorio(id):
 @app.route('/')
 def index():
     return send_from_directory('templates', 'index.html')
+
+# ========== ROTA DE ANIVERSÁRIOS ==========
+@app.route('/api/aniversarios/planilha', methods=['GET'])
+def gerar_planilha_aniversarios():
+    """Gera uma planilha Excel com os aniversários dos alunos"""
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from calendar import month_name
+        
+        # Buscar alunos com data de nascimento
+        alunos = Aluno.query.filter(Aluno.data_nascimento.isnot(None)).all()
+        
+        if not alunos:
+            return jsonify({'error': 'Nenhum aluno com data de nascimento cadastrada'}), 404
+        
+        # Criar workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Aniversários"
+        
+        # Cabeçalhos
+        headers = ['Nome', 'Data de Nascimento', 'Idade', 'Mês', 'Dia', 'Próximo Aniversário', 'Dias até Aniversário', 'Email', 'Telefone']
+        ws.append(headers)
+        
+        # Estilizar cabeçalho
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+        
+        # Processar alunos e calcular informações
+        hoje = date.today()
+        alunos_com_aniversario = []
+        
+        for aluno in alunos:
+            if aluno.data_nascimento:
+                data_nasc = aluno.data_nascimento
+                idade = hoje.year - data_nasc.year - ((hoje.month, hoje.day) < (data_nasc.month, data_nasc.day))
+                
+                # Calcular próximo aniversário
+                proximo_aniversario = date(hoje.year, data_nasc.month, data_nasc.day)
+                if proximo_aniversario < hoje:
+                    proximo_aniversario = date(hoje.year + 1, data_nasc.month, data_nasc.day)
+                
+                dias_ate_aniversario = (proximo_aniversario - hoje).days
+                
+                alunos_com_aniversario.append({
+                    'aluno': aluno,
+                    'idade': idade,
+                    'proximo_aniversario': proximo_aniversario,
+                    'dias_ate': dias_ate_aniversario,
+                    'mes': data_nasc.month,
+                    'dia': data_nasc.day
+                })
+        
+        # Ordenar por mês e dia
+        alunos_com_aniversario.sort(key=lambda x: (x['mes'], x['dia']))
+        
+        # Adicionar dados
+        for item in alunos_com_aniversario:
+            aluno = item['aluno']
+            row = [
+                aluno.nome,
+                aluno.data_nascimento.strftime('%d/%m/%Y'),
+                item['idade'],
+                month_name[item['mes']],
+                item['dia'],
+                item['proximo_aniversario'].strftime('%d/%m/%Y'),
+                item['dias_ate'],
+                aluno.email or '',
+                aluno.telefone or ''
+            ]
+            ws.append(row)
+        
+        # Ajustar largura das colunas
+        column_widths = {
+            'A': 30,  # Nome
+            'B': 18,  # Data de Nascimento
+            'C': 10,  # Idade
+            'D': 15,  # Mês
+            'E': 10,  # Dia
+            'F': 20,  # Próximo Aniversário
+            'G': 20,  # Dias até Aniversário
+            'H': 30,  # Email
+            'I': 18   # Telefone
+        }
+        
+        for col, width in column_widths.items():
+            ws.column_dimensions[col].width = width
+        
+        # Salvar em BytesIO
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+        
+        # Nome do arquivo com data atual
+        filename = f"Aniversarios_{hoje.strftime('%Y%m%d')}.xlsx"
+        
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # Rota para servir arquivos estáticos
 @app.route('/static/<path:filename>')
