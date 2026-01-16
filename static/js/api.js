@@ -8,26 +8,45 @@ let useLocalStorage = false;
 // Verificar se está rodando no GitHub Pages (sem backend)
 async function checkBackendAvailable() {
     try {
-        const response = await fetch(`${API_BASE_URL}/health`, { method: 'GET' });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const response = await fetch(`${API_BASE_URL}/health`, { 
+            method: 'GET',
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
         return response.ok;
     } catch (error) {
         return false;
     }
 }
 
-// Inicializar verificação
-checkBackendAvailable().then(available => {
-    useLocalStorage = !available;
-    if (useLocalStorage) {
-        console.log('Usando armazenamento local (IndexedDB)');
-        // Garantir que localStorage está inicializado
-        if (window.localStorage && !window.localStorage.db) {
-            window.localStorage.init();
+// Inicializar verificação - no GitHub Pages sempre usa localStorage
+(async () => {
+    // Se estiver no GitHub Pages, sempre usar localStorage
+    if (isGitHubPages) {
+        useLocalStorage = true;
+        console.log('GitHub Pages detectado - usando armazenamento local (IndexedDB)');
+        // Aguardar storage estar disponível
+        if (window.localStorage) {
+            if (!window.localStorage.db) {
+                await window.localStorage.init();
+            }
         }
     } else {
-        console.log('Usando backend Flask');
+        // Tentar verificar backend
+        const available = await checkBackendAvailable();
+        useLocalStorage = !available;
+        if (useLocalStorage) {
+            console.log('Backend não disponível - usando armazenamento local (IndexedDB)');
+            if (window.localStorage && !window.localStorage.db) {
+                await window.localStorage.init();
+            }
+        } else {
+            console.log('Usando backend Flask');
+        }
     }
-});
+})();
 
 class ApiClient {
     async request(endpoint, options = {}) {
