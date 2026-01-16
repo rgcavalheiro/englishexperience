@@ -66,9 +66,8 @@ class Router {
         container.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Carregando...</span></div></div>';
 
         // Importar e executar view dinamicamente
-        // Detectar base path para GitHub Pages
-        const isGitHubPages = window.location.hostname.includes('github.io');
-        const basePath = isGitHubPages ? '/englishexperience' : '';
+        // Usar caminho absoluto a partir da raiz do site
+        const basePath = window.location.pathname.split('/').slice(0, -1).join('/') || '';
         const viewPath = `${basePath}/static/js/views/${viewName}.js`;
         import(viewPath)
             .then(module => {
