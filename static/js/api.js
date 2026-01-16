@@ -97,12 +97,13 @@ class ApiClient {
     }
 
     async localRequest(endpoint, options = {}) {
-        // Garantir que localStorage está inicializado
-        if (!window.localStorage) {
-            throw new Error('LocalStorage não está disponível');
+        // Garantir que dbStorage está inicializado
+        const dbStorage = window.dbStorage || window.localStorage;
+        if (!dbStorage) {
+            throw new Error('dbStorage não está disponível');
         }
-        if (!window.localStorage.db) {
-            await window.localStorage.init();
+        if (!dbStorage.db) {
+            await dbStorage.init();
         }
 
         const method = options.method || 'GET';

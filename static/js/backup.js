@@ -58,12 +58,13 @@ class BackupManager {
                 try {
                     const data = JSON.parse(e.target.result);
                     
-                    if (window.localStorage && window.localStorage.db) {
-                        // Usar localStorage
-                        await window.localStorage.importData(data);
+                    const dbStorage = window.dbStorage || window.localStorage;
+                    if (dbStorage && dbStorage.db) {
+                        // Usar dbStorage
+                        await dbStorage.importData(data);
                     } else {
                         // Importar via API (se disponível)
-                        // Por enquanto, apenas localStorage
+                        // Por enquanto, apenas dbStorage
                         throw new Error('Importação via API não implementada. Use o modo offline.');
                     }
 
@@ -79,8 +80,9 @@ class BackupManager {
 
     async clearAllData() {
         if (confirm('Tem certeza que deseja limpar TODOS os dados? Esta ação não pode ser desfeita!')) {
-            if (window.localStorage && window.localStorage.db) {
-                await window.localStorage.clearAll();
+            const dbStorage = window.dbStorage || window.localStorage;
+            if (dbStorage && dbStorage.db) {
+                await dbStorage.clearAll();
                 alert('Todos os dados foram limpos!');
                 window.location.reload();
             } else {

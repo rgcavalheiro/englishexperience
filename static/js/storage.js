@@ -299,18 +299,20 @@ class LocalStorage {
 }
 
 // Criar instância global
-const localStorage = new LocalStorage();
+const dbStorage = new LocalStorage();
 
 // Inicializar quando o módulo for carregado
 (async () => {
     try {
-        await localStorage.init();
+        await dbStorage.init();
         console.log('IndexedDB inicializado com sucesso');
     } catch (error) {
         console.error('Erro ao inicializar IndexedDB:', error);
     }
 })();
 
-// Exportar
-window.localStorage = localStorage;
+// Exportar com nome diferente para não conflitar com localStorage nativo
+window.dbStorage = dbStorage;
+// Manter compatibilidade com código antigo
+window.localStorage = dbStorage;
 
