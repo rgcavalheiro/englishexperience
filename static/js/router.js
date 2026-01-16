@@ -99,12 +99,20 @@ class Router {
 }
 
 // Inicializar router quando DOM estiver pronto
+// Aguardar que api e localStorage estejam disponíveis
 let router;
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        router = new Router();
-    });
-} else {
+function initRouter() {
+    // Verificar se api está disponível
+    if (typeof window.api === 'undefined') {
+        setTimeout(initRouter, 100);
+        return;
+    }
     router = new Router();
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initRouter);
+} else {
+    initRouter();
 }
 
