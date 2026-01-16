@@ -1,5 +1,8 @@
 // Cliente API para comunicação com o backend ou storage local
-const API_BASE_URL = '/api';
+// Detectar se está no GitHub Pages (base path)
+const isGitHubPages = window.location.hostname.includes('github.io');
+const BASE_PATH = isGitHubPages ? '/englishexperience' : '';
+const API_BASE_URL = `${BASE_PATH}/api`;
 let useLocalStorage = false;
 
 // Verificar se está rodando no GitHub Pages (sem backend)

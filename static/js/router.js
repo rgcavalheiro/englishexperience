@@ -66,7 +66,7 @@ class Router {
         container.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Carregando...</span></div></div>';
 
         // Importar e executar view dinamicamente
-        const viewPath = `./views/${viewName}.js`;
+        const viewPath = `./static/js/views/${viewName}.js`;
         import(viewPath)
             .then(module => {
                 if (module.default && typeof module.default === 'function') {
