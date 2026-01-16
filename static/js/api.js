@@ -141,6 +141,11 @@ class ApiClient {
     async gerarRelatorio(data) {
         return this.request('/relatorios/gerar', { method: 'POST', body: data });
     }
+
+    // Importação
+    async importarAlunos() {
+        return this.request('/importar-alunos', { method: 'POST' });
+    }
 }
 
 const api = new ApiClient();

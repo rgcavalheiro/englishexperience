@@ -20,6 +20,115 @@ os.makedirs('static/uploads', exist_ok=True)
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
+# ========== ROTA DE IMPORTAÇÃO ==========
+@app.route('/api/importar-alunos', methods=['POST'])
+def importar_alunos_endpoint():
+    """Endpoint para importar alunos de uma planilha Excel"""
+    try:
+        from openpyxl import load_workbook
+        
+        # Caminho da planilha
+        planilha_path = os.path.join('imports', 'Planilha_Aulas_Teacher_Nathy.xlsx')
+        
+        if not os.path.exists(planilha_path):
+            return jsonify({'error': 'Planilha não encontrada'}), 404
+        
+        # Carregar planilha
+        wb = load_workbook(planilha_path, data_only=True)
+        ws = wb.active
+        
+        alunos_importados = 0
+        alunos_atualizados = 0
+        alunos_erro = 0
+        erros = []
+        
+        # Processar linhas (começando da linha 2, linha 1 é cabeçalho)
+        for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            if not row or not row[0]:
+                continue
+            
+            try:
+                # Coluna A: Nome do aluno
+                nome = str(row[0]).strip() if row[0] else None
+                if not nome or nome.lower() in ['nome', 'aluno', '']:
+                    continue
+                
+                # Coluna B: Valor Hora-Aula (R$)
+                valor_hora = None
+                if len(row) > 1 and row[1]:
+                    try:
+                        valor_hora = float(row[1])
+                    except (ValueError, TypeError):
+                        pass
+                
+                # Coluna C: Nº de Aulas no Mês
+                frequencia_mensal = None
+                if len(row) > 2 and row[2]:
+                    try:
+                        frequencia_mensal = int(float(row[2]))
+                    except (ValueError, TypeError):
+                        pass
+                
+                # Coluna E: Observações
+                observacoes_planilha = None
+                if len(row) > 4 and row[4]:
+                    observacoes_planilha = str(row[4]).strip()
+                
+                # Montar observações
+                observacoes_parts = []
+                if valor_hora:
+                    observacoes_parts.append(f"Valor hora/aula: R$ {valor_hora:.2f}")
+                if frequencia_mensal:
+                    observacoes_parts.append(f"Frequência mensal: {frequencia_mensal} aulas")
+                if observacoes_planilha:
+                    observacoes_parts.append(observacoes_planilha)
+                
+                observacoes = "Importado da planilha. " + ". ".join(observacoes_parts) if observacoes_parts else "Importado da planilha"
+                
+                # Verificar se aluno já existe
+                aluno_existente = Aluno.query.filter_by(nome=nome).first()
+                if aluno_existente:
+                    # Atualizar aluno existente
+                    aluno_existente.valor_hora_aula = valor_hora
+                    aluno_existente.frequencia_mensal = frequencia_mensal
+                    if observacoes_parts:
+                        obs_atual = aluno_existente.observacoes or ""
+                        aluno_existente.observacoes = f"{obs_atual}. Atualizado da planilha: {'. '.join(observacoes_parts)}" if obs_atual else observacoes
+                    alunos_atualizados += 1
+                    continue
+                
+                # Criar novo aluno
+                aluno = Aluno(
+                    nome=nome,
+                    status=StatusAluno.ATIVO,
+                    valor_hora_aula=valor_hora,
+                    frequencia_mensal=frequencia_mensal,
+                    observacoes=observacoes
+                )
+                
+                db.session.add(aluno)
+                alunos_importados += 1
+                
+            except Exception as e:
+                alunos_erro += 1
+                erros.append(f"Linha {row_num}: {str(e)}")
+                continue
+        
+        # Commit das alterações
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Importação concluída',
+            'alunos_importados': alunos_importados,
+            'alunos_atualizados': alunos_atualizados,
+            'erros': alunos_erro,
+            'detalhes_erros': erros[:10]  # Limitar a 10 erros
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
 # ========== ROTAS DE ALUNOS ==========
 @app.route('/api/alunos', methods=['GET'])
 def listar_alunos():
@@ -430,4 +539,3 @@ if __name__ == '__main__':
     with app.app_context():
         db.create_all()
     app.run(debug=True, port=8000)
-

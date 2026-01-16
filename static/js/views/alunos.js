@@ -4,9 +4,14 @@ export default async function alunos(container) {
         <div class="container-fluid">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h2>Gestão de Alunos</h2>
-                <button class="btn btn-primary" data-action="novo-aluno">
-                    <i class="bi bi-plus-circle"></i> Novo Aluno
-                </button>
+                <div>
+                    <button class="btn btn-success me-2" data-action="importar-planilha">
+                        <i class="bi bi-file-earmark-excel"></i> Importar da Planilha
+                    </button>
+                    <button class="btn btn-primary" data-action="novo-aluno">
+                        <i class="bi bi-plus-circle"></i> Novo Aluno
+                    </button>
+                </div>
             </div>
             
             <div class="card">
@@ -107,6 +112,8 @@ export default async function alunos(container) {
                             <th>Nome</th>
                             <th>Email</th>
                             <th>Telefone</th>
+                            <th>Valor Hora/Aula</th>
+                            <th>Freq. Mensal</th>
                             <th>Status</th>
                             <th>Ações</th>
                         </tr>
@@ -117,6 +124,8 @@ export default async function alunos(container) {
                                 <td><strong>${aluno.nome}</strong></td>
                                 <td>${aluno.email || '-'}</td>
                                 <td>${aluno.telefone || '-'}</td>
+                                <td>${aluno.valor_hora_aula ? `R$ ${parseFloat(aluno.valor_hora_aula).toFixed(2)}` : '-'}</td>
+                                <td>${aluno.frequencia_mensal ? `${aluno.frequencia_mensal} aulas` : '-'}</td>
                                 <td><span class="badge bg-${aluno.status === 'ativo' ? 'success' : 'secondary'}">${aluno.status}</span></td>
                                 <td>
                                     <button class="btn btn-sm btn-outline-primary" data-action="editar-aluno" data-id="${aluno.id}">Editar</button>
@@ -145,7 +154,37 @@ export default async function alunos(container) {
         const action = e.target.getAttribute('data-action');
         const id = e.target.getAttribute('data-id');
 
-        if (action === 'novo-aluno') {
+        if (action === 'importar-planilha') {
+            if (confirm('Deseja importar alunos da planilha Excel?\n\nIsso irá adicionar os alunos que ainda não existem no sistema.')) {
+                try {
+                    const loadingMsg = document.createElement('div');
+                    loadingMsg.className = 'alert alert-info';
+                    loadingMsg.innerHTML = '<i class="bi bi-hourglass-split"></i> Importando alunos da planilha...';
+                    document.getElementById('alunos-list').prepend(loadingMsg);
+                    
+                    const response = await api.request('/importar-alunos', { method: 'POST' });
+                    
+                    loadingMsg.remove();
+                    const successMsg = document.createElement('div');
+                    successMsg.className = 'alert alert-success';
+                    successMsg.innerHTML = `
+                        <strong>Importação concluída!</strong><br>
+                        Alunos importados: ${response.alunos_importados || 0}<br>
+                        ${response.alunos_atualizados ? `Alunos atualizados: ${response.alunos_atualizados}<br>` : ''}
+                        ${response.erros > 0 ? `<span class="text-warning">Erros: ${response.erros}</span>` : ''}
+                    `;
+                    document.getElementById('alunos-list').prepend(successMsg);
+                    
+                    // Remover mensagem após 5 segundos
+                    setTimeout(() => successMsg.remove(), 5000);
+                    
+                    // Recarregar lista de alunos
+                    carregarAlunos();
+                } catch (error) {
+                    alert('Erro ao importar: ' + error.message);
+                }
+            }
+        } else if (action === 'novo-aluno') {
             document.getElementById('alunoModalTitle').textContent = 'Novo Aluno';
             document.getElementById('alunoForm').reset();
             document.getElementById('aluno-id').value = '';

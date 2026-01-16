@@ -1,6 +1,6 @@
 from database import db
 from datetime import datetime
-from sqlalchemy import Enum
+from sqlalchemy import Enum, Numeric
 import enum
 
 class StatusAluno(enum.Enum):
@@ -25,6 +25,9 @@ class Aluno(db.Model):
     observacoes = db.Column(db.Text)
     status = db.Column(db.Enum(StatusAluno), default=StatusAluno.ATIVO)
     data_cadastro = db.Column(db.DateTime, default=datetime.utcnow)
+    # Campos adicionais para importação
+    valor_hora_aula = db.Column(db.Numeric(10, 2))  # Valor da hora/aula
+    frequencia_mensal = db.Column(db.Integer)  # Número de aulas por mês
     
     # Relacionamentos
     aulas = db.relationship('Aula', backref='aluno', lazy=True, cascade='all, delete-orphan')
@@ -40,7 +43,9 @@ class Aluno(db.Model):
             'data_nascimento': self.data_nascimento.isoformat() if self.data_nascimento else None,
             'observacoes': self.observacoes,
             'status': self.status.value if self.status else None,
-            'data_cadastro': self.data_cadastro.isoformat() if self.data_cadastro else None
+            'data_cadastro': self.data_cadastro.isoformat() if self.data_cadastro else None,
+            'valor_hora_aula': float(self.valor_hora_aula) if self.valor_hora_aula else None,
+            'frequencia_mensal': self.frequencia_mensal
         }
 
 class Aula(db.Model):
